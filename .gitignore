@@ -1,0 +1,83 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Installer logs
+debug.log
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# mypy
+.mypy_cache/
+.dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# VS Code
+.vscode/
+
+# Scraped data and large files
+scraped_data/property_images/
+scraped_data/property_listings.csv
+scraped_data/property_listings copy.csv
+scraped_data/property_details.json
+scraped_data/property_details copy.json
+OLD_JSON.json
+scraper.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Ignore backup files
+*~
+*.bak
+*.tmp
+
+# Do not ignore source code or requirements
+!*.py
+!requirements.txt
+!scraped_data/README.md
+!scraped_data/property_details_scraper.py 
