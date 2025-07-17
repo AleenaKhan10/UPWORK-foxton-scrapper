@@ -1,0 +1,9 @@
+azure-functions
+requests
+beautifulsoup4
+selenium
+pyvirtualdisplay
+webdriver-manager
+lxml
+python-dateutil
+PyJWT

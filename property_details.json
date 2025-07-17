@@ -1,0 +1,153 @@
+[
+  {
+    "url": "https://www.foxtons.co.uk/properties-for-sale/sw11/chpk3642836",
+    "scraped_at": "2025-07-16T17:40:43.393236",
+    "property_id": "chpk3642836",
+    "scraping_status": "completed",
+    "address": "Yvon House, Battersea, SW11",
+    "description": "A well-presented 1 bedroom flat set on the first floor of a secure development, boasting a bright open-plan reception room, a double bedroom and a fantastic location in Battersea.",
+    "property_type": "Flat",
+    "rooms": {
+      "beds": 1,
+      "baths": 1
+    },
+    "price": "£390,000",
+    "key_features": [
+      "Fantastic 1 bedroom flat on the first floor",
+      "Secure entrance, concierge, lift and parking space",
+      "Generous reception room with dining space",
+      "Modern open-plan kitchen with integrated appliances",
+      "Well-proportioned double bedroom",
+      "Chain free",
+      "Moments from amenities and transport links",
+      "Battersea Park is a short distance away"
+    ],
+    "further_details": {
+      "Tenure": "Leasehold",
+      "Lease Expires": "26 Nov, 2132",
+      "Ground Rent": "£100 per annum (2025)",
+      "Service Charge": "£2,540 per annum (2025)",
+      "Stamp Duty": "£4,500",
+      "Council Tax": "£990.07 per year (D)",
+      "Local Authority": "Wandsworth (Main Part of Borough)",
+      "Total Sq Ft": "503 (46.73 Sq M) approx.",
+      "References": "13642836"
+    },
+    "nearest_stations": [
+      {
+        "station_info": "Queenstown Road (Battersea) Rail Station - Zone: 2",
+        "map_link": "https://www.google.com/maps/search/?api=1&query=queenstown-road-(battersea)-rail+station",
+        "station_name": "SOUTH WESTERN RAILWAY"
+      },
+      {
+        "station_info": "Battersea Park Rail Station - Zone: 2",
+        "map_link": "https://www.google.com/maps/search/?api=1&query=battersea-park-rail+station",
+        "station_name": "SOUTHERN"
+      },
+      {
+        "station_info": "Battersea Power Station Underground Station - Zone: 1",
+        "map_link": "https://www.google.com/maps/search/?api=1&query=battersea-power-underground+station",
+        "station_name": "NORTHERN"
+      }
+    ],
+    "local_life": "A wide range of shops, bars, cafes and restaurants can be found around Battersea Park Road, Battersea Bridge Road and Parkgate Road.",
+    "epc_rating": {
+      "current": "B-85",
+      "potential": "B-86"
+    },
+    "agent_email": "battersea@foxtons.co.uk",
+    "images": [
+      {
+        "original_url": "https://assets.foxtons.co.uk/w/720/1748596417/chpk3642836-2.jpg",
+        "local_path": "E:\\Upwork\\Foxtons Scrapper\\Foxtons Scrapper\\property_images\\chpk3642836\\image_001.jpg"
+      },
+      {
+        "original_url": "https://assets.foxtons.co.uk/w/720/1748429770/chpk3642836-1.jpg",
+        "local_path": "E:\\Upwork\\Foxtons Scrapper\\Foxtons Scrapper\\property_images\\chpk3642836\\image_002.jpg"
+      },
+      {
+        "original_url": "https://assets.foxtons.co.uk/w/720/1748429853/chpk3642836-8.jpg",
+        "local_path": "E:\\Upwork\\Foxtons Scrapper\\Foxtons Scrapper\\property_images\\chpk3642836\\image_003.jpg"
+      },
+      {
+        "original_url": "https://assets.foxtons.co.uk/w/720/1748429793/chpk3642836-3.jpg",
+        "local_path": "E:\\Upwork\\Foxtons Scrapper\\Foxtons Scrapper\\property_images\\chpk3642836\\image_004.jpg"
+      },
+      {
+        "original_url": "https://assets.foxtons.co.uk/w/720/1748429805/chpk3642836-4.jpg",
+        "local_path": "E:\\Upwork\\Foxtons Scrapper\\Foxtons Scrapper\\property_images\\chpk3642836\\image_005.jpg"
+      }
+    ],
+    "api_posting": {
+      "status": "error",
+      "message": "No response from API after all retries"
+    }
+  },
+  {
+    "url": "https://www.foxtons.co.uk/properties-for-sale/sw17/chpk0396937",
+    "scraped_at": "2025-07-16T18:33:12.296925",
+    "property_id": "chpk0396937",
+    "scraping_status": "completed",
+    "address": "Tooting Grove, Tooting, SW17",
+    "description": "A bright and airy two bedroom flat situated on the first floor of this purpose built residential block moments from Tooting High Street.",
+    "property_type": "Flat",
+    "rooms": {
+      "beds": 2,
+      "baths": 1
+    },
+    "price": "£390,000",
+    "key_features": [
+      "Well-presented 2 bedroom flat",
+      "Set in the first floor of a residential block",
+      "Bright reception room with dining space",
+      "Modern kitchen with fitted appliances",
+      "2 generously sized bedrooms",
+      "Smart bathroom with a separate wc",
+      "Moments from amenities and transport links"
+    ],
+    "further_details": {
+      "Tenure": "Leasehold",
+      "Lease Expires": "-",
+      "Ground Rent": "None",
+      "Service Charge": "£1,189 per annum (2023)",
+      "Stamp Duty": "£4,500",
+      "Council Tax": "-",
+      "Local Authority": "Wandsworth (Commons Area)",
+      "Total Sq Ft": "623 (57.88 Sq M) approx.",
+      "References": "1396937"
+    },
+    "nearest_stations": [
+      {
+        "station_info": "Tooting Broadway Underground Station - Zone: 3",
+        "map_link": "https://www.google.com/maps/search/?api=1&query=tooting-broadway-underground+station",
+        "station_name": "NORTHERN"
+      },
+      {
+        "station_info": "Colliers Wood Underground Station - Zone: 3",
+        "map_link": "https://www.google.com/maps/search/?api=1&query=colliers-wood-underground+station",
+        "station_name": "NORTHERN"
+      },
+      {
+        "station_info": "Tooting Rail Station - Zone: 3",
+        "map_link": "https://www.google.com/maps/search/?api=1&query=tooting-rail+station",
+        "station_name": "THAMESLINK"
+      }
+    ],
+    "local_life": "Tooting Grove is conveniently situated just off Tooting High Street, which offers a wide range of shops, bars and restaurants. Tooting Broadway Underground Station (Northern Line) is nearby.",
+    "epc_rating": {
+      "current": "C-73",
+      "potential": "C-80"
+    },
+    "agent_email": "tooting@foxtons.co.uk",
+    "images": [
+      {
+        "original_url": "https://assets.foxtons.co.uk/w/720/1729780868/chpk0396937-9.jpg",
+        "local_path": "E:\\Upwork\\Foxtons Scrapper\\Foxtons Scrapper\\property_images\\chpk0396937\\image_001.jpg"
+      }
+    ],
+    "api_posting": {
+      "status": "error",
+      "message": "No response from API after all retries"
+    }
+  }
+]
