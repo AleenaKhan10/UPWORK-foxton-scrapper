@@ -21,44 +21,18 @@ from selenium.webdriver.chrome.service import Service
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from webdriver_manager.chrome import ChromeDriverManager
 import re
-
-# Import our custom modules
-try:
-    from db_api_handler import create_api_handler
-    from json_data_manager import create_data_manager
-except ImportError as e:
-    print(f"⚠️ Warning: Could not import custom modules: {e}")
-    print("   Make sure db_api_handler.py and json_data_manager.py are in the same directory")
-    
-    # Fallback functions for compatibility
-    create_api_handler = lambda *args, **kwargs: None
-    create_data_manager = lambda *args, **kwargs: None
+import db_api_call
 
 class PropertyDetailsScraper:
-    def __init__(self, csv_file_path, images_dir="property_images", output_file="property_details.json", 
-                 api_config=None):
+    def __init__(self, csv_file_path, images_dir="property_images", output_file="property_details.json"):
         self.csv_file_path = csv_file_path
         self.images_dir = images_dir
         self.output_file = output_file
-        
-        # Initialize new data manager
-        self.data_manager = create_data_manager(output_file)
-        if self.data_manager:
-            print(f"✅ JSON Data Manager initialized")
-        else:
-            print(f"⚠️ Using fallback data handling")
         self.scraped_data = []
         
-        # Initialize API handler
-        self.api_handler = create_api_handler()
-        if self.api_handler:
-            print(f"✅ API Handler initialized")
-        else:
-            print(f"⚠️ API Handler not available - using fallback")
         
-        # Always setup API config for backward compatibility
-        self.api_config = api_config or {}
-        self.setup_api_config()
+        # Load existing data if file exists
+        self.load_existing_data()
         
         # Create images directory if it doesn't exist
         if not os.path.exists(self.images_dir):
@@ -74,39 +48,8 @@ class PropertyDetailsScraper:
         
         self.driver = webdriver.Chrome(options=chrome_options)
         self.wait = WebDriverWait(self.driver, 10)
-    
-    def setup_api_config(self):
-        """Setup API configuration with defaults"""
-        # Default API configuration
-        default_config = {
-            "base_url": "https://api.laddr.com",  # Update with actual API base URL
-            "listing_endpoint": "/api/Listing/Upsert",
-            "token": self.api_config.get("token", ""),
-            "user_id": "waqar@lexumsoft.com",  # From the provided token data
-            "country_id": 1,  # Default to UK - you may need to adjust
-            "state_id": 1,    # Default - you may need to adjust  
-            "city_id": 1,     # Default - you may need to adjust
-            "enabled": True,  # Set to False to disable API posting
-            "timeout": 30,    # API request timeout
-            "max_retries": 3, # Maximum API retry attempts
-            "retry_delay": 5  # Delay between retries
-        }
-        
-        # Merge with provided config
-        self.api_config = {**default_config, **self.api_config}
-        
-        # Setup headers
-        self.api_headers = {
-            "Authorization": f"Bearer {self.api_config['token']}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "User-Agent": "Foxtons-Property-Scraper/1.0"
-        }
-        
-        print(f"🔧 API Integration {'Enabled' if self.api_config['enabled'] else 'Disabled'}")
-        if self.api_config['enabled'] and not self.api_config['token']:
-            print("⚠️ Warning: API enabled but no token provided")
-    
+
+
     def parse_price(self, price_str):
         """Extract numeric price from price string"""
         if not price_str:
@@ -176,288 +119,6 @@ class PropertyDetailsScraper:
                         tube_lines.append(match.title())
         
         return ", ".join(tube_lines) if tube_lines else ""
-    
-    def map_to_api_format(self, property_data):
-        """Map scraped property data to API format"""
-        try:
-            # Extract required data with defaults
-            rooms = property_data.get('rooms', {})
-            bedrooms = rooms.get('beds', 0) or rooms.get('bedrooms', 0)
-            bathrooms = rooms.get('baths', 0) or rooms.get('bathrooms', 0)
-            
-            # Parse area from further_details
-            further_details = property_data.get('further_details', {})
-            total_area = 0.0
-            
-            # Look for area in different possible fields
-            area_fields = ['Total Sq Ft', 'Area', 'Floor Area', 'Total Area']
-            for field in area_fields:
-                if field in further_details:
-                    total_area = self.parse_area(further_details[field])
-                    break
-            
-            # If no area found, try to estimate based on bedrooms (rough estimate)
-            if total_area == 0 and bedrooms > 0:
-                # Very rough estimate: 500 sq ft per bedroom + 200 base
-                total_area = (bedrooms * 500) + 200
-            
-            # Parse price
-            price = self.parse_price(property_data.get('price', ''))
-            
-            # Extract EPC rating
-            epc_rating = ""
-            epc_data = property_data.get('epc_rating', {})
-            if isinstance(epc_data, dict):
-                current_rating = epc_data.get('current', '')
-                if current_rating and current_rating != "Not available":
-                    epc_rating = current_rating
-            elif isinstance(epc_data, str):
-                epc_rating = epc_data
-            
-            # Map property condition - default to "New" if not specified
-            property_condition = "New"  # API default from the schema
-            
-            # Extract agent email
-            agent_email = property_data.get('agent_email', '')
-            if not agent_email or agent_email in ['Not available', 'Error']:
-                agent_email = "info@foxtons.co.uk"  # Default fallback
-            
-            # Extract agent name from email or use default
-            agent_name = "Foxtons Agent"
-            if '@' in agent_email:
-                name_part = agent_email.split('@')[0]
-                if name_part.lower() != 'info':
-                    agent_name = f"Foxtons {name_part.title()}"
-            
-            # Create API payload
-            api_data = {
-                "ListingId": 0,  # 0 for new listings
-                "UserId": self.api_config['user_id'],
-                "CountryId": self.api_config['country_id'],
-                "StateId": self.api_config['state_id'], 
-                "CityId": self.api_config['city_id'],
-                "StreetAddress": self.extract_address_parts(property_data.get('address', '')),
-                "UnitNumber": "",  # Not typically available in Foxtons data
-                "PostalCodeId": 0,  # Would need postal code lookup
-                "PostalCodeText": "",  # Could extract from address if needed
-                "PropertyTypeId": 0,  # Would need property type mapping
-                "PropertyCondition": property_condition,
-                "Price": price,
-                "Bedrooms": bedrooms,
-                "Bathrooms": bathrooms,
-                "TotalArea": total_area,
-                "OutsideSpace": 0.0,  # Not typically specified separately
-                "AgentName": agent_name,
-                "AgentEmail": agent_email,
-                "ListingMedias": [],  # Will be populated with uploaded image IDs
-                "ListingMediaToRemove": [],
-                "EPCRating": epc_rating,
-                "EPCAccepted": True if epc_rating else False,
-                "TubeLines": self.extract_tube_lines(property_data.get('nearest_stations', [])),
-                "Description": property_data.get('description', '')
-            }
-            
-            return api_data
-            
-        except Exception as e:
-            print(f"❌ Error mapping property data to API format: {str(e)}")
-            raise e
-    
-    def upload_image_to_api(self, image_path):
-        """Upload a single image to the API and return the media ID"""
-        if not self.api_config['enabled']:
-            return None
-            
-        try:
-            if not os.path.exists(image_path):
-                print(f"❌ Image file not found: {image_path}")
-                return None
-            
-            upload_url = f"{self.api_config['base_url']}/api/Media/Upload" # Integrated endpoint
-            
-            # Prepare file for upload
-            with open(image_path, 'rb') as img_file:
-                files = {
-                    'file': (os.path.basename(image_path), img_file, 'image/jpeg')
-                }
-                
-                # Remove Content-Type from headers for file upload
-                upload_headers = {k: v for k, v in self.api_headers.items() if k != 'Content-Type'}
-                
-                print(f"📤 Uploading image: {os.path.basename(image_path)}")
-                
-                response = requests.post(
-                    upload_url,
-                    files=files,
-                    headers=upload_headers,
-                    timeout=self.api_config['timeout']
-                )
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    media_id = result.get('id') or result.get('mediaId') or result.get('MediaId')
-                    if media_id:
-                        print(f"✅ Image uploaded successfully, Media ID: {media_id}")
-                        return media_id
-                    else:
-                        print(f"⚠️ Image uploaded but no media ID returned: {result}")
-                        return None
-                else:
-                    print(f"❌ Image upload failed: {response.status_code} - {response.text}")
-                    return None
-                    
-        except Exception as e:
-            print(f"❌ Error uploading image {image_path}: {str(e)}")
-            return None
-    
-    def upload_property_images(self, property_data):
-        """Upload all property images and return list of media IDs"""
-        media_ids = []
-        
-        if not self.api_config['enabled']:
-            return media_ids
-        
-        images = property_data.get('images', [])
-        if not images:
-            print("📷 No images to upload")
-            return media_ids
-        
-        print(f"📤 Uploading {len(images)} images...")
-        
-        for i, image_data in enumerate(images, 1):
-            try:
-                local_path = image_data.get('local_path')
-                if local_path and os.path.exists(local_path):
-                    print(f"📤 Uploading image {i}/{len(images)}")
-                    media_id = self.upload_image_to_api(local_path)
-                    if media_id:
-                        media_ids.append(media_id)
-                    
-                    # Be respectful with API calls
-                    time.sleep(1)
-                else:
-                    print(f"⚠️ Image {i} not found: {local_path}")
-                    
-            except Exception as e:
-                print(f"❌ Error processing image {i}: {str(e)}")
-        
-        print(f"✅ Successfully uploaded {len(media_ids)}/{len(images)} images")
-        return media_ids
-    
-    def post_property_to_api(self, property_data):
-        """Post property data to the API using the new API handler or fallback"""
-        if self.api_handler and self.api_handler.enabled:
-            # Use new API handler
-            return self.api_handler.post_property(property_data)
-        elif self.api_config.get('enabled', False):
-            # Fallback to old method
-            if not self.api_config.get('token'):
-                return {"status": "disabled", "message": "No API token provided"}
-        else:
-            return {"status": "disabled", "message": "API posting disabled"}
-        
-        try:
-            property_id = property_data.get('property_id', 'unknown')
-            print(f"🚀 Posting property {property_id} to API...")
-            
-            # Map data to API format
-            api_data = self.map_to_api_format(property_data)
-            
-            # Upload images first
-            media_ids = self.upload_property_images(property_data)
-            api_data['ListingMedias'] = media_ids
-            
-            # Post to API with retries
-            listing_url = f"{self.api_config['base_url']}{self.api_config['listing_endpoint']}"
-            
-            for attempt in range(self.api_config['max_retries']):
-                try:
-                    print(f"📡 Attempting API post (attempt {attempt + 1}/{self.api_config['max_retries']})")
-                    
-                    response = requests.post(
-                        listing_url,
-                        json=api_data,
-                        headers=self.api_headers,
-                        timeout=self.api_config['timeout']
-                    )
-                    
-                    if response.status_code in [200, 201]:
-                        result = response.json()
-                        listing_id = result.get('id') or result.get('listingId') or result.get('ListingId')
-                        
-                        print(f"✅ Property {property_id} posted successfully!")
-                        if listing_id:
-                            print(f"📋 Listing ID: {listing_id}")
-                        
-                        return {
-                            "status": "success",
-                            "listing_id": listing_id,
-                            "message": "Property posted successfully",
-                            "images_uploaded": len(media_ids),
-                            "api_response": result
-                        }
-                    
-                    elif response.status_code == 400:
-                        print(f"❌ Bad request (400): {response.text}")
-                        return {
-                            "status": "error",
-                            "message": f"Bad request: {response.text}",
-                            "api_data": api_data
-                        }
-                    
-                    elif response.status_code == 401:
-                        print(f"❌ Unauthorized (401): Check API token")
-                        return {
-                            "status": "error", 
-                            "message": "Unauthorized - check API token"
-                        }
-                    
-                    else:
-                        print(f"❌ API error {response.status_code}: {response.text}")
-                        if attempt < self.api_config['max_retries'] - 1:
-                            print(f"⏳ Retrying in {self.api_config['retry_delay']} seconds...")
-                            time.sleep(self.api_config['retry_delay'])
-                            continue
-                        
-                        return {
-                            "status": "error",
-                            "message": f"API error {response.status_code}: {response.text}"
-                        }
-                        
-                except requests.exceptions.Timeout:
-                    print(f"⏰ Request timeout (attempt {attempt + 1})")
-                    if attempt < self.api_config['max_retries'] - 1:
-                        time.sleep(self.api_config['retry_delay'])
-                        continue
-                    
-                    return {
-                        "status": "error",
-                        "message": "Request timeout after all retries"
-                    }
-                
-                except requests.exceptions.RequestException as e:
-                    print(f"🌐 Network error (attempt {attempt + 1}): {str(e)}")
-                    if attempt < self.api_config['max_retries'] - 1:
-                        time.sleep(self.api_config['retry_delay'])
-                        continue
-                    
-                    return {
-                        "status": "error", 
-                        "message": f"Network error: {str(e)}"
-                    }
-            
-            return {
-                "status": "error",
-                "message": "All retry attempts failed"
-            }
-            
-        except Exception as e:
-            print(f"❌ Critical error posting to API: {str(e)}")
-            return {
-                "status": "error",
-                "message": f"Critical error: {str(e)}"
-            }
-
     def __del__(self):
         if hasattr(self, 'driver') and self.driver:
             try:
@@ -1049,91 +710,35 @@ class PropertyDetailsScraper:
             
             property_data["scraping_status"] = "completed"
             print(f"Successfully scraped property {property_id}")
-            
-            # Post to API if enabled
-            try:
-                api_result = self.post_property_to_api(property_data)
-                property_data["api_posting"] = api_result
-                
-                if api_result.get('status') == 'success':
-                    property_data["api_listing_id"] = api_result.get('listing_id')
-                    print(f"✅ Property {property_id} successfully posted to API")
-                else:
-                    print(f"⚠️ API posting result: {api_result.get('message', 'Unknown error')}")
-                    
-            except Exception as api_error:
-                print(f"❌ API posting error for property {property_id}: {str(api_error)}")
-                property_data["api_posting"] = {
-                    "status": "error",
-                    "message": str(api_error)
-                }
-            
+
             return property_data
             
         except Exception as e:
-            print(f"Critical error scraping {url}: {str(e)}")
-            property_data["scraping_status"] = "failed"
-            property_data["error"] = str(e)
-            property_data["error_type"] = type(e).__name__
-            
-            # Ensure all required fields exist with default values
-            default_fields = {
-                "address": "",
-                "description": "",
-                "property_type": "",
-                "rooms": {},
-                "price": "",
-                "key_features": [],
-                "further_details": {},
-                "nearest_stations": [],
-                "local_life": "",
-                "epc_rating": {"current": "Not available", "potential": "Not available"},
-                "agent_email": "Not available",
-                "images": [],
-                "api_posting": {"status": "skipped", "message": "Scraping failed"},
-                "api_listing_id": None
-            }
-            
-            for field, default_value in default_fields.items():
-                if field not in property_data:
-                    property_data[field] = default_value
-            
-            return property_data
+            print(f"Error scraping property {property_id}: {str(e)}")
+            return None
     
     def load_existing_data(self):
-        """Load existing scraped data using the data manager or fallback"""
-        if self.data_manager:
-            # Use new data manager
-            if self.data_manager.load_data():
-                print(f"📄 Loaded {len(self.data_manager.data)} existing records via Data Manager")
-            else:
-                print("⚠️ Failed to load data via Data Manager")
-        else:
-            # Fallback to old method
-            if os.path.exists(self.output_file):
-                try:
-                    with open(self.output_file, 'r', encoding='utf-8') as f:
-                        self.scraped_data = json.load(f)
-                    print(f"📄 Loaded {len(self.scraped_data)} existing records from {self.output_file}")
-                except (json.JSONDecodeError, IOError) as e:
-                    print(f"⚠️ Could not load existing file {self.output_file}: {str(e)}")
-                    print("🔄 Starting with empty dataset")
-                    self.scraped_data = []
-            else:
-                print(f"📝 No existing file found. Starting fresh.")
+        """Load existing scraped data if the output file exists"""
+        if os.path.exists(self.output_file):
+            try:
+                with open(self.output_file, 'r', encoding='utf-8') as f:
+                    self.scraped_data = json.load(f)
+                print(f"📄 Loaded {len(self.scraped_data)} existing records from {self.output_file}")
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"⚠️ Could not load existing file {self.output_file}: {str(e)}")
+                print("🔄 Starting with empty dataset")
                 self.scraped_data = []
+        else:
+            print(f"📝 No existing file found. Starting fresh.")
+            self.scraped_data = []
     
     def get_scraped_urls(self):
         """Get set of already scraped URLs to avoid duplicates"""
-        if self.data_manager:
-            return self.data_manager.get_scraped_urls()
-        else:
-            # Fallback to old method
-            scraped_urls = set()
-            for item in self.scraped_data:
-                if 'url' in item and item['url']:
-                    scraped_urls.add(item['url'])
-            return scraped_urls
+        scraped_urls = set()
+        for item in self.scraped_data:
+            if 'url' in item and item['url']:
+                scraped_urls.add(item['url'])
+        return scraped_urls
     
     def read_csv_urls(self):
         """Read URLs from CSV file, excluding already scraped ones"""
@@ -1158,52 +763,44 @@ class PropertyDetailsScraper:
         return urls
     
     def save_data(self):
-        """Save scraped data using the data manager or fallback"""
-        if self.data_manager:
-            # Use new data manager
-            if self.data_manager.save_data():
-                print(f"✅ Successfully saved {len(self.data_manager.data)} records via Data Manager")
-            else:
-                print("❌ Failed to save data via Data Manager")
-        else:
-            # Fallback to old method
-            max_retries = 3
-            for attempt in range(max_retries):
-                try:
-                    # First, validate that our data can be serialized
-                    json_str = json.dumps(self.scraped_data, indent=2, ensure_ascii=False, default=str)
+        """Save scraped data to JSON file with enhanced error handling"""
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # First, validate that our data can be serialized
+                json_str = json.dumps(self.scraped_data, indent=2, ensure_ascii=False, default=str)
+                
+                # Create backup filename
+                backup_file = f"{self.output_file}.backup"
+                
+                # Write to backup first
+                with open(backup_file, 'w', encoding='utf-8') as f:
+                    f.write(json_str)
+                
+                # If backup successful, rename to main file
+                import shutil
+                shutil.move(backup_file, self.output_file)
+                
+                # Success - break out of retry loop
+                break
+                
+            except (json.JSONEncodeError, TypeError) as e: # type: ignore
+                print(f"JSON serialization error on attempt {attempt + 1}: {str(e)}")
+                # Clean problematic data
+                self.clean_data_for_json()
+                if attempt == max_retries - 1:
+                    print("Failed to save JSON after cleaning data")
                     
-                    # Create backup filename
-                    backup_file = f"{self.output_file}.backup"
+            except (IOError, OSError) as e:
+                print(f"File I/O error on attempt {attempt + 1}: {str(e)}")
+                time.sleep(1)  # Wait before retry
+                if attempt == max_retries - 1:
+                    print("Failed to save data after multiple attempts")
                     
-                    # Write to backup first
-                    with open(backup_file, 'w', encoding='utf-8') as f:
-                        f.write(json_str)
-                    
-                    # If backup successful, rename to main file
-                    import shutil
-                    shutil.move(backup_file, self.output_file)
-                    
-                    # Success - break out of retry loop
-                    break
-                    
-                except (json.JSONEncodeError, TypeError) as e: # type: ignore
-                    print(f"JSON serialization error on attempt {attempt + 1}: {str(e)}")
-                    # Clean problematic data
-                    self.clean_data_for_json()
-                    if attempt == max_retries - 1:
-                        print("Failed to save JSON after cleaning data")
-                        
-                except (IOError, OSError) as e:
-                    print(f"File I/O error on attempt {attempt + 1}: {str(e)}")
-                    time.sleep(1)  # Wait before retry
-                    if attempt == max_retries - 1:
-                        print("Failed to save data after multiple attempts")
-                        
-                except Exception as e:
-                    print(f"Unexpected error saving data on attempt {attempt + 1}: {str(e)}")
-                    if attempt == max_retries - 1:
-                        print("Failed to save data due to unexpected error")
+            except Exception as e:
+                print(f"Unexpected error saving data on attempt {attempt + 1}: {str(e)}")
+                if attempt == max_retries - 1:
+                    print("Failed to save data due to unexpected error")
 
     def clean_data_for_json(self):
         """Clean data to ensure JSON serialization compatibility"""
@@ -1227,11 +824,7 @@ class PropertyDetailsScraper:
     
     def scrape_all_properties(self, limit=None):
         """Scrape all properties from the CSV file"""
-        # Load existing data first
-        self.load_existing_data()
-        
-        # Get existing count from data manager or fallback
-        existing_count = len(self.data_manager.data) if self.data_manager else len(self.scraped_data)
+        existing_count = len(self.scraped_data)
         urls = self.read_csv_urls()
         
         if limit:
@@ -1249,19 +842,37 @@ class PropertyDetailsScraper:
             
             try:
                 property_data = self.scrape_property_details(url)
-                
-                # Add to data manager or fallback
-                if self.data_manager:
-                    self.data_manager.add_record(property_data)
-                else:
-                    self.scraped_data.append(property_data)
+                self.scraped_data.append(property_data)
                 
                 # Save data after each property
                 self.save_data()
-                
-                # Get total count for display
-                total_count = len(self.data_manager.data) if self.data_manager else len(self.scraped_data)
-                print(f"💾 Data saved after property {i} (Total: {total_count})")
+
+                # Upsert listing to API
+                try:
+                    result = db_api_call.upsert_listing(property_data)
+                    if result is not None:
+                        status_code, response = result
+                        if status_code == 200:
+                            print(f"Listing {property_data.get('api_listing_id')} upserted successfully")
+                        elif status_code == 401:
+                            print(f"Listing {property_data.get('api_listing_id')} upsert failed with status {status_code}: {response}")
+                            print("Refreshing token")
+                            db_api_call.refresh_token()
+                            result = db_api_call.upsert_listing(property_data)
+                            if result is not None:
+                                status_code, response = result
+                                if status_code == 200:
+                                    print(f"Listing {property_data.get('api_listing_id')} upserted successfully")
+                                else:
+                                    print(f"Listing {property_data.get('api_listing_id')} upsert failed with status {status_code}: {response}")
+                            else:
+                                print(f"Listing {property_data.get('api_listing_id')} upsert failed: API returned None") 
+                    else:
+                        print(f"Listing {property_data.get('api_listing_id')} upsert failed: API returned None")
+                except Exception as e:
+                    print(f"Error upserting listing: {str(e)}")
+
+                print(f"💾 Data saved after property {i} (Total: {len(self.scraped_data)})")
                 
             except Exception as e:
                 print(f"❌ Fatal error processing property {i} ({url}): {str(e)}")
@@ -1288,17 +899,13 @@ class PropertyDetailsScraper:
                     "api_posting": {"status": "skipped", "message": "Fatal scraping error"},
                     "api_listing_id": None
                 }
-                # Add failed entry to data manager or fallback
-                if self.data_manager:
-                    self.data_manager.add_record(failed_entry)
-                else:
-                    self.scraped_data.append(failed_entry)
+                self.scraped_data.append(failed_entry)
                 
                 # Still try to save data
                 try:
                     self.save_data()
-                    total_count = len(self.data_manager.data) if self.data_manager else len(self.scraped_data)
-                    print(f"💾 Data saved after failed property {i} (Total: {total_count})")
+
+                    print(f"💾 Data saved after failed property {i} (Total: {len(self.scraped_data)})")
                 except Exception as save_error:
                     print(f"Failed to save data after error: {str(save_error)}")
             
@@ -1307,22 +914,6 @@ class PropertyDetailsScraper:
         
         # Final save
         self.save_data()
-        
-        # Calculate API statistics
-        api_stats = self.calculate_api_statistics()
-        
-        # Get final count
-        final_count = len(self.data_manager.data) if self.data_manager else len(self.scraped_data)
-        print(f"\n🎉 Completed scraping! Total properties in database: {final_count}")
-        print(f"📈 Added {len(urls)} new properties to existing {existing_count} records")
-        
-        print(f"\n📊 API Integration Summary:")
-        print(f"  ✅ Successfully posted: {api_stats['success']} properties")
-        print(f"  ❌ Failed to post: {api_stats['failed']} properties")
-        print(f"  ⏭️ Skipped: {api_stats['skipped']} properties")
-        print(f"  🖼️ Total images uploaded: {api_stats['images_uploaded']}")
-        if api_stats['success'] > 0:
-            print(f"  📋 Sample Listing IDs: {', '.join(map(str, api_stats['sample_listing_ids'][:5]))}")
     
     def calculate_api_statistics(self):
         """Calculate API posting statistics"""
@@ -1334,10 +925,7 @@ class PropertyDetailsScraper:
             'sample_listing_ids': []
         }
         
-        # Get data from data manager or fallback
-        data_to_check = self.data_manager.data if self.data_manager else self.scraped_data
-        
-        for property_data in data_to_check:
+        for property_data in self.scraped_data:
             api_posting = property_data.get('api_posting', {})
             api_status = api_posting.get('status', 'unknown')
             
@@ -1364,28 +952,6 @@ def main():
     IMAGES_DIR = "property_images"      # Directory to save images
     OUTPUT_FILE = "property_details.json"  # Output JSON file
     
-    # Load API Configuration from separate file
-    try:
-        from api_config import get_api_config
-        API_CONFIG = get_api_config()
-    except ImportError:
-        print("⚠️ api_config.py not found, using default configuration")
-        # Fallback configuration
-        API_CONFIG = {
-            "base_url": "https://api.laddr.com",
-            "listing_endpoint": "/api/Listing/Upsert",
-            "media_upload_endpoint": "/api/Media/Upload",
-            "token": "",  # You need to add your token here
-            "user_id": "waqar@lexumsoft.com",
-            "country_id": 1,
-            "state_id": 1,
-            "city_id": 1,
-            "enabled": False,  # Disabled by default without config file
-            "timeout": 60,
-            "max_retries": 3,
-            "retry_delay": 5
-        }
-    
     # Ensure we're in the right directory
     import os
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1399,29 +965,17 @@ def main():
             if file.endswith('.csv'):
                 print(f"  - {file}")
         return
-    
-    # Display configuration
-    print("🔧 Configuration:")
-    print(f"  📁 CSV File: {CSV_FILE}")
-    print(f"  🖼️ Images Directory: {IMAGES_DIR}")
-    print(f"  📄 Output File: {OUTPUT_FILE}")
-    print(f"  🌐 API Integration: {'Enabled' if API_CONFIG['enabled'] else 'Disabled'}")
-    if API_CONFIG['enabled']:
-        print(f"  🔗 API Base URL: {API_CONFIG['base_url']}")
-        print(f"  👤 User ID: {API_CONFIG['user_id']}")
+
     
     # Initialize scraper
     scraper = PropertyDetailsScraper(
         csv_file_path=CSV_FILE,
         images_dir=IMAGES_DIR,
-        output_file=OUTPUT_FILE,
-        api_config=API_CONFIG
+        output_file=OUTPUT_FILE
     )
     
     try:
-        # Start scraping (you can add limit=5 for testing)
-        # scraper.scrape_all_properties(limit=5)  # Test with 5 properties
-        scraper.scrape_all_properties()  # Scrape all properties
+        scraper.scrape_all_properties() 
     
     except KeyboardInterrupt:
         print("\nScraping interrupted by user")

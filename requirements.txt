@@ -5,5 +5,4 @@ selenium
 pyvirtualdisplay
 webdriver-manager
 lxml
-python-dateutil
-PyJWT
+python-dateutil 
