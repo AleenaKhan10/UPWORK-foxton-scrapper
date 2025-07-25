@@ -193,16 +193,37 @@ class PropertyDetailsScraper:
                 # Get station name from p element
                 p_element = station_div.find_element(By.XPATH, ".//p")
                 station_name = self.extract_text_safe(p_element)
+                tube_lines = db_api_call.get_all_tube_lines()
+                all_lines= tube_lines[1].get("data")
+                # Find the tube line id whose name matches the station name (case-insensitive, strip whitespace)
+                matching_tube_line_id = None
+                if station_name and all_lines:
+                    for tube_line in all_lines:
+                        tube_line_name = tube_line.get("tubeLineName") or tube_line.get("name")
+                        if tube_line_name and tube_line_name.strip().lower() == station_name.strip().lower():
+                            matching_tube_line_id = tube_line.get("tubeLineId") or tube_line.get("id")
+                            break
                 
                 if station_info or map_link or station_name:
                     stations_data.append({
                         "station_info": station_info,
                         "map_link": map_link,
-                        "station_name": station_name
+                        "station_name": station_name,
+                        "tube_line_id": matching_tube_line_id
                     })
             except NoSuchElementException:
                 continue
-        return stations_data
+        try:
+            station_id = ''
+            for station in stations_data:
+                if station.get("tube_line_id"):
+                    station_id += ','+ str(station.get("tube_line_id"))
+            station_id = station_id[1:]
+            print(f"Station ID: {station_id}")
+        except Exception as e:
+            print(f"Error extracting station ID: {str(e)}")
+            station_id = ''
+        return stations_data, station_id
     
     def extract_key_features(self, features_element):
         """Extract key features from ul element"""
@@ -380,6 +401,13 @@ class PropertyDetailsScraper:
         """Scrape and download property images"""
         images_data = []
         img_elements = self.safe_find_elements('//ul[@class="alice-carousel__stage"]/li[@class="alice-carousel__stage-item"]/img')
+        floor_plan_button = self.safe_find_element('//button[.//text()="Floorplan"]')
+        if floor_plan_button:
+            self.driver.execute_script("arguments[0].click();", floor_plan_button)
+            time.sleep(5)
+            floor_plan_element = self.safe_find_element('//img[@alt="floor-plan"]')
+            img_elements.append(floor_plan_element)
+            time.sleep(1)
         
         for i, img_element in enumerate(img_elements):
             try:
@@ -664,6 +692,23 @@ class PropertyDetailsScraper:
             try:
                 details_elements = self.safe_find_elements('//div[@class="MuiBox-root fxt-4zmbs6"]//div[@class="MuiBox-root fxt-0"]')
                 property_data["further_details"] = self.parse_further_details(details_elements)
+                local_authority = property_data["further_details"].get("Local Authority")
+                if 'The City of' in local_authority:
+                    local_authority = local_authority.split(' ')[3].strip()
+                elif '(' in local_authority:
+                    local_authority = local_authority.split('(')[0].strip()
+
+                
+                print(f"Local authority: {local_authority}")
+                stateids = db_api_call.get_states_by_country_id()
+                state_ids = stateids[1].get("data")
+                for state in state_ids:
+                    if state.get("stateName") == local_authority:
+                        property_data["state_id"] = state.get("stateId")
+                        break
+                if not property_data.get("state_id"):
+                    print(f"State ID not found for {local_authority}")
+                    property_data["state_id"] = 0
             except Exception as e:
                 print(f"Error extracting further details: {str(e)}")
                 property_data["further_details"] = {}
@@ -671,7 +716,10 @@ class PropertyDetailsScraper:
             # Nearest Stations
             try:
                 station_elements = self.safe_find_elements('//div[@class="MuiBox-root fxt-1ofqig9"]')
-                property_data["nearest_stations"] = self.parse_nearest_stations(station_elements)
+                stations_data, station_id = self.parse_nearest_stations(station_elements)
+                property_data["nearest_stations"] = stations_data
+                property_data["station_id"] = station_id
+                
             except Exception as e:
                 print(f"Error extracting nearest stations: {str(e)}")
                 property_data["nearest_stations"] = []
@@ -711,7 +759,7 @@ class PropertyDetailsScraper:
             property_data["scraping_status"] = "completed"
             print(f"Successfully scraped property {property_id}")
 
-            return property_data
+            return property_data 
             
         except Exception as e:
             print(f"Error scraping property {property_id}: {str(e)}")
@@ -842,6 +890,9 @@ class PropertyDetailsScraper:
             
             try:
                 property_data = self.scrape_property_details(url)
+                if property_data is None:
+                    print(f"Property data is None for {url}")
+                    continue
                 self.scraped_data.append(property_data)
                 
                 # Save data after each property

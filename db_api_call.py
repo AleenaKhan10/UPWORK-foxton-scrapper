@@ -1,9 +1,10 @@
 import requests
 import os
+import json
+import mimetypes
+import re
 
 API_BASE_URL = "https://laddr-api.azurewebsites.net"
-REFRESH_TOKEN = "DhpVAuNh0vXi3HPaVRij480QUObdT5w3044ThKQAfDFtY8s/dVM402pbeT/EUTNcugAwZwZDKGlS+ynKkj7mFg=="
-ACCESS_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ3YXFhckBsZXh1bXNvZnQuY29tIiwianRpIjoiOGU0MzIwNmYtYjdmMi00NTFiLTkxMTUtYWM2OWM0YzI0ZDhiIiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZWlkZW50aWZpZXIiOiJiNGU5NTYwZC1hNjBiLTQ3MzYtYWI1Yy0xMTRlOTViNDUyYWUiLCJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1lIjoiV2FxYXIgS2hhbiIsImh0dHA6Ly9zY2hlbWFzLm1pY3Jvc29mdC5jb20vd3MvMjAwOC8wNi9pZGVudGl0eS9jbGFpbXMvcm9sZSI6IlVzZXIiLCJleHAiOjE3NTI3NzUyODIsImlzcyI6ImxhZGRyLmNvbSIsImF1ZCI6ImxhZGRyLmNvbSJ9.Z0fyPxwLGpt0ZR2i67e-3if5DZIfUos92TV_wdNmi7w"
 
 def refresh_token(timeout=10):
     """
@@ -22,14 +23,14 @@ def refresh_token(timeout=10):
     headers = {
         "Content-Type": "application/json"
     }
-    data = {
-        "refreshToken": REFRESH_TOKEN,
-        "AccessToken": ACCESS_TOKEN
-    }
+    with open("token_response.json", "r") as f:
+        data = json.load(f)
     try:
         response = requests.post(url, json=data, headers=headers, timeout=timeout)
         if response.status_code == 200:
             try:
+                with open("token_response.json", "w") as f:
+                    json.dump(response.json(), f)
                 return response.json()
             except Exception as e:
                 print(f"Token refresh succeeded but response is not valid JSON: {str(e)}")
@@ -41,15 +42,15 @@ def refresh_token(timeout=10):
         print(f"Token refresh request error: {str(e)}")
         return None
 
-import mimetypes
-import re
 
 def upsert_listing(property_data, user_id="4fce0a61-c632-4d4a-9f30-fb82bfdb6e59", country_id=2, state_id=3, city_id=6, property_type_id=6, postal_code_id=3, timeout=30, access_token=None):
     """
     Upserts a property listing using the exact payload format provided by the team.
     Sends data as _parts structure with field-value pairs.
     """
-    token_to_use = access_token if access_token else ACCESS_TOKEN
+    with open("token_response.json", "r") as f:
+        data = json.load(f)
+    token_to_use = data.get("accessToken")
     url = f"{API_BASE_URL}/api/Listing/Upsert"
     headers = {
         "Authorization": f"Bearer {token_to_use}",
@@ -117,7 +118,7 @@ def upsert_listing(property_data, user_id="4fce0a61-c632-4d4a-9f30-fb82bfdb6e59"
     if not agent_name:
         agent_email = property_data.get("agent_email", "")
         if agent_email and "@" in agent_email:
-            agent_name = agent_email.split("@")[0].replace(".", " ").replace("_", " ").title()
+            agent_name = 'Foxtons ' + agent_email.split("@")[0].replace(".", " ").replace("_", " ").title()
         else:
             agent_name = "Agent Name"
 
@@ -125,26 +126,11 @@ def upsert_listing(property_data, user_id="4fce0a61-c632-4d4a-9f30-fb82bfdb6e59"
     postal_code_text = property_data.get("further_details", {}).get("Postal Code", "")
     if not postal_code_text:
         address = property_data.get("address", "")
-        # Try to get the last part after the last comma, strip spaces, and check if it looks like a postcode
-        if address and "," in address:
-            possible_postcode = address.split(",")[-1].strip()
-            # UK postcode regex, but fallback if not matched
-            postcode_match = re.search(r"\b([A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2})\b", possible_postcode, re.I)
-            if postcode_match:
-                postal_code_text = postcode_match.group(1).upper()
-            else:
-                # Try to find postcode anywhere in address as fallback
-                postcode_match = re.search(r"\b([A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2})\b", address, re.I)
-                if postcode_match:
-                    postal_code_text = postcode_match.group(1).upper()
-                else:
-                    postal_code_text = possible_postcode if possible_postcode else "SW1A 1AA"
+        address_parts = address.split(',')
+        if len(address_parts) > 1:
+            postal_code_text = address_parts[-1].strip()
         else:
-            postcode_match = re.search(r"\b([A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2})\b", address, re.I)
-            if postcode_match:
-                postal_code_text = postcode_match.group(1).upper()
-            else:
-                postal_code_text = "SW1A 1AA"
+            postal_code_text = "SW1A 1AA"
 
     # UnitNumber
     unit_number = property_data.get("further_details", {}).get("Unit Number", "")
@@ -158,6 +144,15 @@ def upsert_listing(property_data, user_id="4fce0a61-c632-4d4a-9f30-fb82bfdb6e59"
         else:
             unit_number = "1"
 
+    # StateId
+    state_id = property_data.get("state_id", 3)
+    try:
+        state_id_int = int(state_id)
+    except (ValueError, TypeError):
+        state_id_int = 3
+    if state_id_int == 0:
+        state_id_int = 3
+
     # Build form data following the exact format from the successful request
     form_data = {
         "OutsideSpace": "0",
@@ -168,7 +163,7 @@ def upsert_listing(property_data, user_id="4fce0a61-c632-4d4a-9f30-fb82bfdb6e59"
         "PropertyCondition": property_data.get("further_details", {}).get("Property Condition", "New"),
         "Price": _parse_price(property_data.get("price", "")),
         "PropertyTypeId": "6",
-        "StateId": "3",
+        "StateId": state_id_int,
         "UnitNumber": unit_number,
         "AgentName": agent_name,
         "TotalArea": str(_parse_area(property_data.get("further_details", {}).get("Total Sq Ft", ""))),
@@ -178,11 +173,19 @@ def upsert_listing(property_data, user_id="4fce0a61-c632-4d4a-9f30-fb82bfdb6e59"
         "EPCRating": _epc_rating_str(property_data.get("epc_rating", {})),
         "Bedrooms": str(_parse_int(property_data.get("rooms", {}).get("beds", 1))),
         "AgentEmail": _required_field(property_data.get("agent_email", ""), "agent@example.com"),
-        "TubeLines": _tube_lines_str(property_data.get("nearest_stations", [])),
+        "TubeLines": property_data.get("station_id", ""),
         "Description": _required_field(property_data.get("description", ""), "Property Description"),
         "EPCAccepted": "true",
-        "ListingId": "0"
+        "ListingId": "0",
+        "Tenure": property_data.get("further_details", {}).get("Tenure", "") or "",
+        "Lease_Expires": property_data.get("further_details", {}).get("Lease Expires", "") or "",
+        "Ground_Rent": property_data.get("further_details", {}).get("Ground Rent", "") or "",
+        "Service_Charge": property_data.get("further_details", {}).get("Service Charge", "") or "",
+        "Stamp_Duty": property_data.get("further_details", {}).get("Stamp Duty", "") or "",
+        "Council_Tax": property_data.get("further_details", {}).get("Council Tax", "") or ""
     }
+
+    print(form_data)
 
     # Handle images as files for ListingMedias
     files = []
@@ -256,3 +259,100 @@ def upsert_listing(property_data, user_id="4fce0a61-c632-4d4a-9f30-fb82bfdb6e59"
                 fobj.close()
             except Exception:
                 pass
+
+
+def get_states_by_country_id(country_id=2):
+    """
+    Fetches states by country ID from the Laddr API.
+
+    Args:
+        country_id (int or str): The ID of the country.
+        access_token (str): Bearer token for authorization.
+        base_url (str): Base URL for the API.
+
+    Returns:
+        tuple: (status_code, response_json or error dict)
+    """
+    import requests
+
+    with open("token_response.json", "r") as f:
+        data = json.load(f)
+    token_to_use = data.get("accessToken")
+
+    url = f"{API_BASE_URL}/api/State/GetByCountryId/{country_id}"
+    headers = {
+        "accept": "*/*",
+        "Authorization": f"Bearer {token_to_use}"
+    }
+
+    try:
+        response = requests.get(url, headers=headers, timeout=15)
+        if response.status_code == 200:
+            try:
+                response_json = response.json()
+                return response.status_code, response_json
+            except Exception as e:
+                print(f"Invalid JSON response: {str(e)}")
+                return response.status_code, {"error": f"Invalid JSON response: {str(e)}"}
+        elif response.status_code == 401:
+            try:
+                token_response = refresh_token()
+                if token_response:
+                    new_access_token = token_response.get("accessToken")
+                    return get_states_by_country_id(country_id, new_access_token)
+            except Exception as e:
+                print(f"Error refreshing token: {str(e)}")
+                return response.status_code, {"error": str(e)}
+            print(f"Failed to fetch states: {response.text}")
+            return response.status_code, {"error": response.text}
+        else:
+            print(f"Failed to fetch states: {response.text}")
+            return response.status_code, {"error": response.text}
+                
+    except requests.RequestException as e:
+        return None, {"error": str(e)}
+
+
+def get_all_tube_lines():
+    """
+    Fetches all tube lines from the Laddr API.
+
+    Args:
+        access_token (str, optional): Bearer token for authorization. If None, will read from token_response.json.
+        base_url (str, optional): Base URL for the API. If None, will use API_BASE_URL.
+
+    Returns:
+        tuple: (status_code, response_json or error dict)
+    """
+
+    with open("token_response.json", "r") as f:
+        data = json.load(f)
+    token_to_use = data.get("accessToken")
+
+    url = f"{API_BASE_URL}/api/TubeLine/GetAll"
+    headers = {
+        "accept": "*/*",
+        "Authorization": f"Bearer {token_to_use}"
+    }
+
+    try:
+        response = requests.get(url, headers=headers, timeout=15)
+        if response.status_code == 200:
+            try:
+                return response.status_code, response.json()
+            except Exception as e:
+                return response.status_code, {"error": f"Invalid JSON response: {str(e)}"}
+        elif response.status_code == 401:
+            # Try to refresh token if possible
+            try:
+                token_response = refresh_token()
+                if token_response:
+                    new_access_token = token_response.get("accessToken")
+                    return get_all_tube_lines()
+            except Exception as e:
+                return response.status_code, {"error": f"Error refreshing token: {str(e)}"}
+            return response.status_code, {"error": response.text}
+        else:
+            return response.status_code, {"error": response.text}
+    except requests.RequestException as e:
+        return None, {"error": str(e)}
