@@ -11,7 +11,7 @@
       "beds": 1,
       "baths": 1
     },
-    "price": "£350,000",
+    "price": "£350,100",
     "key_features": [
       "Fantastic 1 bedroom flat on the first floor",
       "Secure entrance, concierge, lift and parking space",
@@ -115086,6 +115086,67 @@
       {
         "original_url": "https://assets.foxtons.co.uk/w/720/1743610710/chwk0044601-17.jpg",
         "local_path": "E:\\Upwork\\Foxtons Scrapper\\Foxtons Scrapper\\property_images\\chwk0044601\\image_014.jpg"
+      }
+    ]
+  },
+  {
+    "url": "https://www.foxtons.co.uk/properties-for-sale/sw17/chpk0396937",
+    "scraped_at": "2025-07-25T17:20:50.821242",
+    "property_id": "chpk0396937",
+    "scraping_status": "completed",
+    "address": "Tooting Grove, Tooting, SW17",
+    "description": "A bright and airy two bedroom flat situated on the first floor of this purpose built residential block moments from Tooting High Street.",
+    "property_type": "Flat",
+    "rooms": {
+      "beds": 2,
+      "baths": 1
+    },
+    "price": "£390,000",
+    "key_features": [
+      "Well-presented 2 bedroom flat",
+      "Set in the first floor of a residential block",
+      "Bright reception room with dining space",
+      "Modern kitchen with fitted appliances",
+      "2 generously sized bedrooms",
+      "Smart bathroom with a separate wc",
+      "Moments from amenities and transport links"
+    ],
+    "further_details": {},
+    "nearest_stations": [
+      {
+        "station_info": "Tooting Broadway Underground Station - Zone: 3",
+        "map_link": "https://www.google.com/maps/search/?api=1&query=tooting-broadway-underground+station",
+        "station_name": "NORTHERN",
+        "tube_line_id": 11
+      },
+      {
+        "station_info": "Colliers Wood Underground Station - Zone: 3",
+        "map_link": "https://www.google.com/maps/search/?api=1&query=colliers-wood-underground+station",
+        "station_name": "NORTHERN",
+        "tube_line_id": 11
+      },
+      {
+        "station_info": "Tooting Rail Station - Zone: 3",
+        "map_link": "https://www.google.com/maps/search/?api=1&query=tooting-rail+station",
+        "station_name": "THAMESLINK",
+        "tube_line_id": 34
+      }
+    ],
+    "station_id": "11,11,34",
+    "local_life": "Tooting Grove is conveniently situated just off Tooting High Street, which offers a wide range of shops, bars and restaurants. Tooting Broadway Underground Station (Northern Line) is nearby.",
+    "epc_rating": {
+      "current": "C-73",
+      "potential": "C-80"
+    },
+    "agent_email": "tooting@foxtons.co.uk",
+    "images": [
+      {
+        "original_url": "https://assets.foxtons.co.uk/w/1280/1729780868/chpk0396937-9.jpg",
+        "local_path": "e:\\upwork\\UPWORK-foxton-scrapper\\property_images\\chpk0396937\\image_001.jpg"
+      },
+      {
+        "original_url": "https://assets.foxtons.co.uk/w/2200/1729780881/chpk0396937_floorplan.png",
+        "local_path": "e:\\upwork\\UPWORK-foxton-scrapper\\property_images\\chpk0396937\\image_002.jpg"
       }
     ]
   }

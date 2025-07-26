@@ -22,6 +22,8 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from webdriver_manager.chrome import ChromeDriverManager
 import re
 import db_api_call
+import pymssql
+from db_config import DB_CONFIG
 
 class PropertyDetailsScraper:
     def __init__(self, csv_file_path, images_dir="property_images", output_file="property_details.json"):
@@ -29,6 +31,7 @@ class PropertyDetailsScraper:
         self.images_dir = images_dir
         self.output_file = output_file
         self.scraped_data = []
+        self.db_listings = []
         
         
         # Load existing data if file exists
@@ -39,15 +42,16 @@ class PropertyDetailsScraper:
             os.makedirs(self.images_dir)
         
         # Setup Chrome options for stability
-        chrome_options = Options()
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--window-size=1920,1080")
-        # chrome_options.add_argument("--headless")  # Uncomment to run headless
+        self.chrome_options = Options()
+        self.chrome_options.add_argument("--no-sandbox")
+        self.chrome_options.add_argument("--disable-dev-shm-usage")
+        self.chrome_options.add_argument("--disable-gpu")
+        self.chrome_options.add_argument("--window-size=1920,1080")
+        # self.chrome_options.add_argument("--headless")  # Uncomment to run headless
         
-        self.driver = webdriver.Chrome(options=chrome_options)
-        self.wait = WebDriverWait(self.driver, 10)
+        self.driver = None
+        self.wait = None
+        self.initialize_driver()
 
 
     def parse_price(self, price_str):
@@ -125,6 +129,108 @@ class PropertyDetailsScraper:
                 self.driver.quit()
             except:
                 pass
+
+    def initialize_driver(self):
+        """Initialize Chrome driver"""
+        try:
+            if self.driver:
+                self.close_driver()
+            self.driver = webdriver.Chrome(options=self.chrome_options)
+            self.wait = WebDriverWait(self.driver, 10)
+            print("✅ Browser initialized successfully")
+        except Exception as e:
+            print(f"❌ Error initializing browser: {e}")
+            raise e
+
+    def close_driver(self):
+        """Safely close the Chrome driver"""
+        try:
+            if self.driver:
+                self.driver.quit()
+                print("🔄 Browser closed")
+        except Exception as e:
+            print(f"⚠️ Error closing browser: {e}")
+        finally:
+            self.driver = None
+            self.wait = None
+
+    def connect_to_database(self):
+        """Establish connection to Azure SQL Database"""
+        try:
+            print(f"Connecting to {DB_CONFIG['server']}...")
+            connection = pymssql.connect(
+                server=DB_CONFIG['server'],
+                database=DB_CONFIG['database'],
+                user=DB_CONFIG['username'],
+                password=DB_CONFIG['password'],
+                port=DB_CONFIG['port']
+            )
+            print("✓ Successfully connected to Azure SQL Database")
+            return connection
+        except Exception as e:
+            print(f"✗ Error connecting to database: {e}")
+            return None
+
+    def load_db_listings(self):
+        """Load all listings from database"""
+        print("📥 Loading listings from database...")
+        connection = self.connect_to_database()
+        if not connection:
+            print("❌ Failed to connect to database")
+            return False
+        
+        try:
+            cursor = connection.cursor()
+            # Get essential fields for comparison
+            query = """
+            SELECT ListingId, Description, StreetAddress, CreatedDate
+            FROM [dbo].[Listings] 
+            ORDER BY CreatedDate DESC
+            """
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            
+            self.db_listings = []
+            for row in rows:
+                listing = {
+                    'listing_id': row[0],
+                    'description': row[1] or '',
+                    'address': row[2] or '',
+                    'created_date': row[3]
+                }
+                self.db_listings.append(listing)
+            
+            cursor.close()
+            connection.close()
+            print(f"✅ Loaded {len(self.db_listings)} listings from database")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error loading DB listings: {e}")
+            if connection:
+                connection.close()
+            return False
+
+    def find_listing_by_description(self, description):
+        """Find DB listing by matching description"""
+        if not description or not description.strip():
+            return None
+        
+        description_clean = description.strip().lower()
+        
+        # Try exact match
+        for db_listing in self.db_listings:
+            if db_listing['description'].strip().lower() == description_clean:
+                return db_listing
+        
+        return None
+
+    def find_json_listing_by_url(self, url):
+        """Find JSON listing by URL"""
+        for json_listing in self.scraped_data:
+            if json_listing.get('url') == url:
+                return json_listing
+        return None
     
     def safe_find_element(self, xpath):
         """Safely find an element by xpath"""
@@ -624,14 +730,43 @@ class PropertyDetailsScraper:
             max_retries = 3
             for attempt in range(max_retries):
                 try:
+                    # Check if driver is still responsive
+                    if not self.driver:
+                        print(f"⚠️ Driver not initialized, reinitializing...")
+                        self.initialize_driver()
+                    
                     self.driver.get(url)
                     time.sleep(3)  # Wait for page to load
                     break
                 except Exception as e:
-                    print(f"Error loading page, attempt {attempt + 1}: {str(e)}")
-                    if attempt == max_retries - 1:
-                        raise e
-                    time.sleep(2)
+                    error_msg = str(e)
+                    print(f"❌ Error loading page, attempt {attempt + 1}/{max_retries}: {error_msg}")
+                    
+                    # Check for specific timeout errors that require browser restart
+                    if ("HTTPConnectionPool" in error_msg and "Read timed out" in error_msg) or \
+                       ("WebDriverException" in error_msg) or \
+                       ("InvalidSessionIdException" in error_msg) or \
+                       ("SessionNotCreatedException" in error_msg):
+                        
+                        print(f"🔄 Browser timeout/error detected, restarting browser (attempt {attempt + 1}/{max_retries})")
+                        self.close_driver()
+                        time.sleep(2)  # Wait before reinitializing
+                        
+                        if attempt < max_retries - 1:  # Don't reinitialize on last attempt
+                            try:
+                                self.initialize_driver()
+                            except Exception as init_error:
+                                print(f"❌ Failed to reinitialize browser: {init_error}")
+                                if attempt == max_retries - 1:
+                                    raise e
+                                continue
+                        else:
+                            raise e
+                    else:
+                        # For other errors, just wait and retry
+                        if attempt == max_retries - 1:
+                            raise e
+                        time.sleep(2)
             
             # Expand all accordion sections first
             self.expand_accordions()
@@ -789,7 +924,71 @@ class PropertyDetailsScraper:
         return scraped_urls
     
     def read_csv_urls(self):
-        """Read URLs from CSV file, excluding already scraped ones"""
+        """Read URLs from CSV file, checking both JSON and DB for existing data"""
+        urls_to_scrape = []
+        skipped_count = 0
+        already_in_db_count = 0
+        new_urls_count = 0
+        json_not_in_db_count = 0
+        
+        # Load database listings for comparison
+        print("🔄 Checking database for existing listings...")
+        if not self.load_db_listings():
+            print("⚠️ Could not load DB listings, falling back to JSON-only check")
+            # Fallback to original behavior if DB connection fails
+            return self.read_csv_urls_fallback()
+        
+        try:
+            with open(self.csv_file_path, 'r', encoding='utf-8') as file:
+                csv_reader = csv.DictReader(file)
+                for row in csv_reader:
+                    if 'URL' in row and row['URL']:
+                        url = row['URL']
+                        
+                        # Check if URL exists in JSON file
+                        json_listing = self.find_json_listing_by_url(url)
+                        
+                        if json_listing:
+                            # URL exists in JSON, check if it's in DB
+                            json_description = json_listing.get('description', '')
+                            if json_description:
+                                db_listing = self.find_listing_by_description(json_description)
+                                if db_listing:
+                                    # Already in DB, skip
+                                    print(f"✅ Skipping {url} - already in DB (ID: {db_listing['listing_id']})")
+                                    already_in_db_count += 1
+                                    skipped_count += 1
+                                else:
+                                    # In JSON but not in DB, need to scrape again
+                                    print(f"🔄 Adding {url} - in JSON but not in DB, will re-scrape")
+                                    urls_to_scrape.append(url)
+                                    json_not_in_db_count += 1
+                            else:
+                                # JSON listing has no description, need to scrape again
+                                print(f"🔄 Adding {url} - JSON listing has no description, will re-scrape")
+                                urls_to_scrape.append(url)
+                                json_not_in_db_count += 1
+                        else:
+                            # URL not in JSON, definitely need to scrape
+                            urls_to_scrape.append(url)
+                            new_urls_count += 1
+                            
+        except Exception as e:
+            print(f"❌ Error reading CSV file: {str(e)}")
+            return []
+        
+        print(f"\n📊 URL Processing Summary:")
+        print(f"   ✅ Already in DB (skipped): {already_in_db_count}")
+        print(f"   🔄 In JSON but not DB (will re-scrape): {json_not_in_db_count}")
+        print(f"   🆕 New URLs (not in JSON): {new_urls_count}")
+        print(f"   📋 Total URLs to scrape: {len(urls_to_scrape)}")
+        print(f"   ⏭️ Total skipped: {skipped_count}")
+        
+        return urls_to_scrape
+
+    def read_csv_urls_fallback(self):
+        """Fallback method if DB connection fails - original behavior"""
+        print("⚠️ Using fallback method (JSON-only check)")
         urls = []
         scraped_urls = self.get_scraped_urls()
         skipped_count = 0
@@ -879,10 +1078,12 @@ class PropertyDetailsScraper:
             urls = urls[:limit]
         
         if len(urls) == 0:
-            print("🎉 All properties already scraped! No new URLs to process.")
+            print("🎉 All properties already processed! No URLs need scraping.")
+            print("   All URLs are either already in database or failed to load from CSV.")
             return
         
-        print(f"🚀 Starting to scrape {len(urls)} new URLs (existing: {existing_count} properties)")
+        print(f"🚀 Starting to scrape {len(urls)} URLs (includes new URLs and JSON entries not in DB)")
+        print(f"   JSON file currently has: {existing_count} properties")
         
         for i, url in enumerate(urls, 1):
             current_total = existing_count + i
@@ -926,14 +1127,32 @@ class PropertyDetailsScraper:
                 print(f"💾 Data saved after property {i} (Total: {len(self.scraped_data)})")
                 
             except Exception as e:
-                print(f"❌ Fatal error processing property {i} ({url}): {str(e)}")
+                error_msg = str(e)
+                print(f"❌ Fatal error processing property {i} ({url}): {error_msg}")
+                
+                # Check if this is a browser timeout/error that requires restart
+                if ("HTTPConnectionPool" in error_msg and "Read timed out" in error_msg) or \
+                   ("WebDriverException" in error_msg) or \
+                   ("InvalidSessionIdException" in error_msg) or \
+                   ("SessionNotCreatedException" in error_msg):
+                    
+                    print(f"🔄 Browser error detected, restarting browser for next property...")
+                    self.close_driver()
+                    time.sleep(3)  # Wait before reinitializing
+                    
+                    try:
+                        self.initialize_driver()
+                        print(f"✅ Browser restarted successfully")
+                    except Exception as init_error:
+                        print(f"❌ Failed to restart browser: {init_error}")
+                
                 # Add a failed entry to maintain data structure
                 failed_entry = {
                     "url": url,
                     "scraped_at": datetime.now().isoformat(),
                     "property_id": url.split('/')[-1] if '/' in url else "unknown",
                     "scraping_status": "fatal_error",
-                    "error": str(e),
+                    "error": error_msg,
                     "error_type": type(e).__name__,
                     "address": "",
                     "description": "",
@@ -955,7 +1174,6 @@ class PropertyDetailsScraper:
                 # Still try to save data
                 try:
                     self.save_data()
-
                     print(f"💾 Data saved after failed property {i} (Total: {len(self.scraped_data)})")
                 except Exception as save_error:
                     print(f"Failed to save data after error: {str(save_error)}")
