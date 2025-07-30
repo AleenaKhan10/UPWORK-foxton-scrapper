@@ -63,10 +63,45 @@ class ExistingListingsChecker:
                 self.close_driver()
             self.driver = webdriver.Chrome(options=self.chrome_options)
             self.wait = WebDriverWait(self.driver, 10)
+            self.cookies_handled = False
             print("✅ Browser initialized successfully")
         except Exception as e:
             print(f"❌ Error initializing browser: {e}")
             raise e
+
+
+    def handle_cookies_popup(self):
+        """Handle cookies popup if it appears"""
+        # Only check for cookies if we haven't handled them in this browser session
+        if self.cookies_handled:
+            return
+            
+        try:
+            print("🍪 Checking for cookies popup...")
+            
+            # Wait up to 60 seconds for cookies popup to appear
+            cookie_popup = WebDriverWait(self.driver, 60).until(
+                EC.presence_of_element_located((By.XPATH, "//button[contains(text(), 'Accept All') or contains(text(), 'Accept') or contains(text(), 'Allow All') or contains(text(), 'I Accept') or contains(text(), 'OK') or contains(text(), 'Got it')]"))
+            )
+            
+            print("🍪 Cookies popup found, clicking 'Accept All'...")
+            cookie_popup.click()
+            print("✅ Cookies accepted successfully")
+            
+            # Mark cookies as handled for this browser session
+            self.cookies_handled = True
+            
+            # Wait a moment for the popup to disappear
+            time.sleep(2)
+            
+        except TimeoutException:
+            print("ℹ️ No cookies popup found or already handled")
+            # Mark as handled even if no popup found to avoid checking again
+            self.cookies_handled = True
+        except Exception as e:
+            print(f"⚠️ Error handling cookies popup: {e}")
+            # Continue anyway, don't let cookie issues stop the scraping
+
 
     def close_driver(self):
         """Safely close the Chrome driver"""
@@ -332,6 +367,10 @@ class ExistingListingsChecker:
                 self.driver.get(url)
                 time.sleep(3)
                 print(f"   ✅ Page loaded successfully")
+
+                                
+                # Handle cookies popup if this is the first page load after browser restart
+                self.handle_cookies_popup()
                 
                 # Extract description
                 print(f"   🔍 Looking for description element...")

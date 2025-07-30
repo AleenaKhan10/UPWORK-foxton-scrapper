@@ -162,14 +162,14 @@ def upsert_listing(property_data, user_id="4fce0a61-c632-4d4a-9f30-fb82bfdb6e59"
         "UserId": "b4e9560d-a60b-4736-ab5c-114e95b452ae",
         "PropertyCondition": property_data.get("further_details", {}).get("Property Condition", "New"),
         "Price": _parse_price(property_data.get("price", "")),
-        "PropertyTypeId": "6",
-        "StateId": state_id_int,
+        "PropertyTypeId": property_data.get("property_type_id", ''),
+        "StateId": property_data.get("state_id", ''),
         "UnitNumber": unit_number,
         "AgentName": agent_name,
         "TotalArea": str(_parse_area(property_data.get("further_details", {}).get("Total Sq Ft", ""))),
         "StreetAddress": _required_field(property_data.get("address", ""), "Property Address"),
         "CountryId": "2",
-        "PostalCodeId": "3",
+        "PostalCodeId": property_data.get("postal_code_id", ''),
         "EPCRating": _epc_rating_str(property_data.get("epc_rating", {})),
         "Bedrooms": str(_parse_int(property_data.get("rooms", {}).get("beds", 1))),
         "AgentEmail": _required_field(property_data.get("agent_email", ""), "agent@example.com"),
@@ -356,3 +356,77 @@ def get_all_tube_lines():
             return response.status_code, {"error": response.text}
     except requests.RequestException as e:
         return None, {"error": str(e)}
+
+def map_ids(self, property):
+
+    if not self.connect_to_database():
+        return
+    
+    # Load data
+    if not self.load_property_data():
+        return
+    
+    if not self.load_property_types():
+        return
+    
+    if not self.load_postal_codes():
+        return
+
+    property_type_table = self.get_property_type_id()
+    postal_code_table = self.get_postal_code_id()
+    state_table = self.get_state_id()
+
+    property_type_id_data = None
+    postal_code_id_data = None
+    state_id_data = None
+
+    scrapped_description = property['description']
+    scrapped_property_type = property['property_type']
+    scrapped_further_details = property.get('further_details', {})
+
+    postal_code_data_string = property['address'].split(',')[-1].strip().replace('0','').replace('1','').replace('2','').replace('3','').replace('4','').replace('5','').replace('6','').replace('7','').replace('8','').replace('9','')
+    property['postal_code_text'] = postal_code_data_string
+
+    for property_type_table_row in property_type_table:
+        if property_type_table_row[1] == scrapped_property_type:
+            property_type_id_data = property_type_table_row[0]
+            property['property_type_id'] = property_type_id_data
+            break
+
+    for postal_code_table_row in postal_code_table:
+        if postal_code_table_row[2] == postal_code_data_string:
+            postal_code_id_data = postal_code_table_row[0]
+            property['postal_code_id'] = postal_code_id_data
+            break
+
+    tenure = scrapped_further_details.get('Tenure', None)
+    lease_expires = scrapped_further_details.get('Lease Expires', None)
+    ground_rent = scrapped_further_details.get('Ground Rent', None)
+    service_charge = scrapped_further_details.get('Service Charge', None)
+    stamp_duty = scrapped_further_details.get('Stamp Duty', None)
+    council_tax = scrapped_further_details.get('Council Tax', None)
+    local_authority = scrapped_further_details.get('Local Authority', None)
+    total_sq_ft = scrapped_further_details.get('Total Sq Ft', None)
+    references = scrapped_further_details.get('References', None)
+
+    property['tenure'] = tenure
+    property['lease_expires'] = lease_expires
+    property['ground_rent'] = ground_rent
+    property['service_charge'] = service_charge
+    property['stamp_duty'] = stamp_duty
+    property['council_tax'] = council_tax
+    property['total_sq_ft'] = total_sq_ft
+
+    if local_authority:
+        if '(' in local_authority:
+            local_authority = local_authority.split(' ')[0]
+        if 'The City of' in local_authority:
+            local_authority = local_authority.split(' ')[3]
+
+    for state_table_row in state_table:
+        if state_table_row[1] == local_authority:
+            state_id_data = state_table_row[0]
+            property['state_id'] = state_id_data
+            break
+
+    return property

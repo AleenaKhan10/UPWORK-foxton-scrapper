@@ -24,6 +24,7 @@ import re
 import db_api_call
 import pymssql
 from db_config import DB_CONFIG
+from update_listings_pymssql import DatabaseUpdater
 
 class PropertyDetailsScraper:
     def __init__(self, csv_file_path, images_dir="property_images", output_file="property_details.json"):
@@ -32,6 +33,7 @@ class PropertyDetailsScraper:
         self.output_file = output_file
         self.scraped_data = []
         self.db_listings = []
+        self.db_updaters = DatabaseUpdater()
         
         
         # Load existing data if file exists
@@ -51,7 +53,10 @@ class PropertyDetailsScraper:
         
         self.driver = None
         self.wait = None
+        self.cookies_handled = False  # Track if cookies have been handled in this browser session
         self.initialize_driver()
+        self.handle_cookies_popup()
+
 
 
     def parse_price(self, price_str):
@@ -137,10 +142,42 @@ class PropertyDetailsScraper:
                 self.close_driver()
             self.driver = webdriver.Chrome(options=self.chrome_options)
             self.wait = WebDriverWait(self.driver, 10)
+            self.cookies_handled = False
             print("✅ Browser initialized successfully")
         except Exception as e:
             print(f"❌ Error initializing browser: {e}")
             raise e
+        
+
+    def handle_cookies_popup(self):
+        """Handle cookies popup if it appears"""
+        # Only check for cookies if we haven't handled them in this browser session
+        try:
+            print("🍪 Checking for cookies popup...")
+            
+            # Wait up to 60 seconds for cookies popup to appear
+            cookie_popup = WebDriverWait(self.driver, 6).until(
+                EC.presence_of_element_located((By.XPATH, "//button[contains(text(), 'Accept all')]"))
+            )
+            
+            print("🍪 Cookies popup found, clicking 'Accept All'...")
+            cookie_popup.click()
+            print("✅ Cookies accepted successfully")
+            
+            # Mark cookies as handled for this browser session
+            self.cookies_handled = True
+            
+            # Wait a moment for the popup to disappear
+            time.sleep(2)
+            
+        except TimeoutException:
+            print("ℹ️ No cookies popup found or already handled")
+            # Mark as handled even if no popup found to avoid checking again
+            self.cookies_handled = True
+        except Exception as e:
+            print(f"⚠️ Error handling cookies popup: {e}")
+            # Continue anyway, don't let cookie issues stop the scraping
+
 
     def close_driver(self):
         """Safely close the Chrome driver"""
@@ -231,6 +268,43 @@ class PropertyDetailsScraper:
             if json_listing.get('url') == url:
                 return json_listing
         return None
+    
+    def find_json_listing_index_by_url(self, url):
+        """Find JSON listing index by URL"""
+        for index, json_listing in enumerate(self.scraped_data):
+            if json_listing.get('url') == url:
+                return index
+        return -1
+    
+    def update_or_append_property_data(self, property_data):
+        """Update existing property data or append new one"""
+        url = property_data.get('url')
+        if not url:
+            print(f"⚠️ Property data has no URL, appending as new entry")
+            self.scraped_data.append(property_data)
+            return
+        
+        # Find existing entry index
+        existing_index = self.find_json_listing_index_by_url(url)
+        
+        if existing_index >= 0:
+            # Update existing entry
+            print(f"🔄 Updating existing JSON entry for URL: {url}")
+            old_property_id = self.scraped_data[existing_index].get('property_id', 'unknown')
+            new_property_id = property_data.get('property_id', 'unknown')
+            print(f"   Property ID: {old_property_id} -> {new_property_id}")
+            
+            # Preserve any fields that might be important from old data if missing in new
+            old_data = self.scraped_data[existing_index]
+            
+            # Update the entry with new data
+            self.scraped_data[existing_index] = property_data
+            print(f"   ✅ Updated existing entry at index {existing_index}")
+        else:
+            # Append as new entry
+            print(f"🆕 Adding new JSON entry for URL: {url}")
+            self.scraped_data.append(property_data)
+            print(f"   ✅ Added as new entry (total entries: {len(self.scraped_data)})")
     
     def safe_find_element(self, xpath):
         """Safely find an element by xpath"""
@@ -734,6 +808,7 @@ class PropertyDetailsScraper:
                     if not self.driver:
                         print(f"⚠️ Driver not initialized, reinitializing...")
                         self.initialize_driver()
+                        self.handle_cookies_popup()
                     
                     self.driver.get(url)
                     time.sleep(3)  # Wait for page to load
@@ -755,6 +830,7 @@ class PropertyDetailsScraper:
                         if attempt < max_retries - 1:  # Don't reinitialize on last attempt
                             try:
                                 self.initialize_driver()
+                                self.handle_cookies_popup()
                             except Exception as init_error:
                                 print(f"❌ Failed to reinitialize browser: {init_error}")
                                 if attempt == max_retries - 1:
@@ -776,6 +852,7 @@ class PropertyDetailsScraper:
             # Extract each field with individual error handling
             
             # Address
+            self.handle_cookies_popup()
             try:
                 address_element = self.safe_find_element('//h1[@class="MuiTypography-root MuiTypography-h2 fxt-ho8cj"]')
                 property_data["address"] = self.extract_text_safe(address_element)
@@ -833,17 +910,6 @@ class PropertyDetailsScraper:
                 elif '(' in local_authority:
                     local_authority = local_authority.split('(')[0].strip()
 
-                
-                print(f"Local authority: {local_authority}")
-                stateids = db_api_call.get_states_by_country_id()
-                state_ids = stateids[1].get("data")
-                for state in state_ids:
-                    if state.get("stateName") == local_authority:
-                        property_data["state_id"] = state.get("stateId")
-                        break
-                if not property_data.get("state_id"):
-                    print(f"State ID not found for {local_authority}")
-                    property_data["state_id"] = 0
             except Exception as e:
                 print(f"Error extracting further details: {str(e)}")
                 property_data["further_details"] = {}
@@ -893,6 +959,7 @@ class PropertyDetailsScraper:
             
             property_data["scraping_status"] = "completed"
             print(f"Successfully scraped property {property_id}")
+            property_data = db_api_call.map_ids(self.db_updaters, property_data)
 
             return property_data 
             
@@ -1084,17 +1151,22 @@ class PropertyDetailsScraper:
         
         print(f"🚀 Starting to scrape {len(urls)} URLs (includes new URLs and JSON entries not in DB)")
         print(f"   JSON file currently has: {existing_count} properties")
+        # urls.reverse()
         
         for i, url in enumerate(urls, 1):
-            current_total = existing_count + i
-            print(f"\n📍 Progress: {i}/{len(urls)} (Total: {current_total})")
+            # Use actual current count since we might be updating existing entries
+            current_total = len(self.scraped_data)
+            print(f"\n📍 Progress: {i}/{len(urls)} (Total JSON entries: {current_total})")
             
             try:
                 property_data = self.scrape_property_details(url)
                 if property_data is None:
                     print(f"Property data is None for {url}")
+                    self.handle_cookies_popup()
                     continue
-                self.scraped_data.append(property_data)
+                
+                # Use update_or_append instead of always appending
+                self.update_or_append_property_data(property_data)
                 
                 # Save data after each property
                 self.save_data()
@@ -1169,7 +1241,8 @@ class PropertyDetailsScraper:
                     "api_posting": {"status": "skipped", "message": "Fatal scraping error"},
                     "api_listing_id": None
                 }
-                self.scraped_data.append(failed_entry)
+                # Use update_or_append for failed entries too
+                self.update_or_append_property_data(failed_entry)
                 
                 # Still try to save data
                 try:
